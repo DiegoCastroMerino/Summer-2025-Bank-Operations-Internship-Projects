@@ -1,0 +1,195 @@
+Sub VerificarDocumentosDeClientesCuentaYa2()
+Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+
+    IniciarProceso2
+    CrearTablayPivot2
+    ConfigurarPivot2
+    FormatoCondicional2
+    InmovilizarPaneles2
+
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+End Sub
+Private Sub IniciarProceso2()
+    Dim rowCount As Long
+    rowCount = ActiveSheet.Cells(Rows.Count, 1).End(xlUp).Row
+
+    If rowCount > 12000 Then
+        MsgBox "Este archivo tiene 12,000 filas o mas. Por favor disminuir numero de filas"
+        End
+    End If
+
+    Columns("A:A").Select
+    Selection.TextToColumns Destination:=Range("A1"), DataType:=xlDelimited, _
+        TextQualifier:=xlDoubleQuote, ConsecutiveDelimiter:=False, Tab:=True, _
+        Semicolon:=False, Comma:=False, Space:=False, Other:=True, OtherChar:=";", _
+        FieldInfo:=Array(Array(1, 1), Array(2, 1), Array(3, 1), Array(4, 1), Array(5, 1), _
+        Array(6, 1), Array(7, 1), Array(8, 1), Array(9, 1), Array(10, 1), Array(11, 1), _
+        Array(12, 1), Array(13, 1)), TrailingMinusNumbers:=True
+    
+    Application.CutCopyMode = False
+    Range("A1").Select
+End Sub
+Private Sub CrearTablayPivot2()
+    Dim lastRow As Long, lastCol As Long
+    lastRow = Cells(Rows.Count, 1).End(xlUp).Row
+    lastCol = Cells(1, Columns.Count).End(xlToLeft).Column
+
+    ActiveSheet.ListObjects.Add(xlSrcRange, Range(Cells(1, 1), Cells(lastRow, lastCol)), , xlYes).Name = "Cuentas"
+    Sheets.Add
+
+    ActiveWorkbook.PivotCaches.Create( _
+        SourceType:=xlDatabase, _
+        SourceData:="Cuentas" _
+    ).CreatePivotTable _
+        TableDestination:=ActiveSheet.Cells(1, 1), _
+        TableName:="PivotTable17"
+        
+        With ActiveSheet.PivotTables("PivotTable17")
+        .ColumnGrand = True
+        .HasAutoFormat = True
+        .DisplayErrorString = False
+        .DisplayNullString = True
+        .EnableDrilldown = True
+        .ErrorString = ""
+        .MergeLabels = False
+        .NullString = ""
+        .PageFieldOrder = 2
+        .PageFieldWrapCount = 0
+        .PreserveFormatting = True
+        .RowGrand = True
+        .SaveData = True
+        .PrintTitles = False
+        .RepeatItemsOnEachPrintedPage = True
+        .TotalsAnnotation = False
+        .CompactRowIndent = 1
+        .InGridDropZones = False
+        .DisplayFieldCaptions = True
+        .DisplayMemberPropertyTooltips = False
+        .DisplayContextTooltips = True
+        .ShowDrillIndicators = True
+        .PrintDrillIndicators = False
+        .AllowMultipleFilters = False
+        .SortUsingCustomLists = True
+        .FieldListSortAscending = False
+        .ShowValuesRow = False
+        .CalculatedMembersInFilters = False
+        .RowAxisLayout xlCompactRow
+    End With
+
+    With ActiveSheet.PivotTables("PivotTable17").PivotCache
+        .RefreshOnFileOpen = False
+        .MissingItemsLimit = xlMissingItemsDefault
+    End With
+
+End Sub
+Private Sub ConfigurarPivot2()
+
+    ActiveSheet.PivotTables("PivotTable17").RepeatAllLabels xlRepeatLabels
+    Dim keepList As Variant
+    keepList = Array("CARTA_BIENVENIDA.pdf", "CUENTA_AHORRO_DIGITAL.pdf", "DORSO_DUI.jpeg", _
+                     "FATCA_DEBIDA_DILIGENCIA.pdf", "FOTOGRAFIA.jpeg", "FRENTE_DUI.jpeg", _
+                     "HOJA_COMISIONES.pdf", "PERFIL_TRX.pdf", "PRUEBA_VIDA.mp4")
+
+    Dim dict As Object
+    Set dict = CreateObject("Scripting.Dictionary")
+    Dim item As Variant
+    For Each item In keepList
+        dict(item) = True
+    Next item
+    
+    Dim pt As PivotTable
+    Set pt = ActiveSheet.PivotTables("PivotTable17")
+
+    With pt
+        .ManualUpdate = True
+        .RowAxisLayout xlTabularRow
+        .RowGrand = True
+
+        With .PivotFields("Nombre")
+            .Orientation = xlRowField: .Position = 1
+            .Subtotals(1) = False
+            .Subtotals(1) = False
+            .Subtotals = Array(False, False, False, False, False, False, False, False, False, False, False, False)
+        End With
+        
+        With .PivotFields("NoCuenta")
+            .Orientation = xlRowField
+            .Position = 2
+        End With
+        
+        With .PivotFields("TipoProducto")
+            .Orientation = xlPageField: .Position = 1
+            .ClearAllFilters: .CurrentPage = "CUENTA DIGITAL"
+        End With
+
+        With .PivotFields("DOC_ID")
+            .Orientation = xlColumnField: .Position = 1
+            .ClearAllFilters
+
+            Dim pi As PivotItem
+            On Error Resume Next
+            For Each pi In .PivotItems
+                pi.Visible = dict.exists(pi.Name)
+            Next pi
+            On Error GoTo 0
+        End With
+
+        Dim f As PivotField
+        For Each f In .DataFields
+            f.Orientation = xlHidden
+        Next f
+
+        .AddDataField .PivotFields("DOC_ID"), "Count of DOC_ID", xlCount
+        .ManualUpdate = False
+    End With
+    
+            With ActiveSheet.PivotTables("PivotTable17").PivotFields("DOC_ID")
+        .Orientation = xlColumnField
+        .Position = 1
+    End With
+    
+End Sub
+Private Sub FormatoCondicional2()
+Dim targetCell As Range
+Dim pt As PivotTable
+Set pt = ActiveSheet.PivotTables("PivotTable17")
+Set targetCell = pt.TableRange1.Cells(5, 3)
+
+With targetCell
+    .FormatConditions.Delete
+    .FormatConditions.Add Type:=xlCellValue, Operator:=xlLess, Formula1:="=1"
+    With .FormatConditions(.FormatConditions.Count)
+        .SetFirstPriority
+        .StopIfTrue = False
+        .ScopeType = xlDataFieldScope
+        With .Interior
+            .PatternColorIndex = xlAutomatic
+            .ThemeColor = xlThemeColorAccent2
+            .TintAndShade = 0.399945066682943
+        End With
+    End With
+End With
+End Sub
+
+Private Sub InmovilizarPaneles2()
+    With ActiveWindow
+        .SplitColumn = 2
+        .SplitRow = 4
+        .FreezePanes = True
+    End With
+
+    With ActiveSheet.Columns("B")
+        .NumberFormat = "0"
+        .AutoFit
+    End With
+End Sub
+
+
+
+
+
+
