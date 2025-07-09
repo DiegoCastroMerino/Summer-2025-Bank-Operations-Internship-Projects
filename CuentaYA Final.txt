@@ -1,0 +1,527 @@
+Sub MacroEnInglesYEspanol()
+    Debug.Print "Macro started at " & Now
+
+    Dim wbSource As Workbook
+    Dim wsSource As Worksheet
+
+    Set wbSource = ActiveWorkbook
+    Set wsSource = ActiveSheet
+
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+
+    IniciarProceso2 wsSource
+    CrearTablayInsertarFormula2 wsSource
+    CrearPivotTable2 wbSource
+    ConfigurarPivot2 wbSource
+    FormatoCondicional2 wbSource
+    InmovilizarPaneles2 wbSource
+
+    CrearPivot3 wbSource
+    ConfigurarPivot3 wbSource
+    InmovilizarPaneles3 wbSource
+
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+
+    Debug.Print "Macro completed at " & Now
+End Sub
+Private Sub IniciarProceso2(ws As Worksheet)
+    Debug.Print "IniciarProceso2 started"
+
+    Dim rowCount As Long
+    rowCount = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    Debug.Print "Row count: " & rowCount
+
+    If rowCount > 12000 Then
+        MsgBox "Este archivo tiene 12,000 filas o mas. Por favor disminuir numero de filas"
+        End
+    End If
+
+    With ws.Columns("A:A")
+        .TextToColumns Destination:=ws.Range("A1"), DataType:=xlDelimited, _
+            TextQualifier:=xlDoubleQuote, ConsecutiveDelimiter:=False, Tab:=True, _
+            Semicolon:=False, Comma:=False, Space:=False, Other:=True, OtherChar:=";", _
+            FieldInfo:=Array(Array(1, 1), Array(2, 1), Array(3, 1), Array(4, 1), Array(5, 1), _
+                             Array(6, 1), Array(7, 1), Array(8, 1), Array(9, 1), Array(10, 1), _
+                             Array(11, 1), Array(12, 1), Array(13, 1)), TrailingMinusNumbers:=True
+    End With
+
+    Application.CutCopyMode = False
+    ws.Range("A1").Select
+
+    Debug.Print "IniciarProceso2 completed"
+End Sub
+
+Private Sub CrearTablayInsertarFormula2(ws As Worksheet)
+    Debug.Print "CrearTablayInsertarFormula2 started"
+
+    Dim tbl As ListObject
+    Dim lastRow As Long, lastCol As Long
+    Dim formula365 As String, formula2016 As String, formulaToUse As String
+    Dim targetRange As Range
+    Dim colExists As Boolean
+    Dim col As ListColumn
+    Dim excelMajorVersion As Integer
+
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    Debug.Print "LastRow: " & lastRow & ", LastCol: " & lastCol
+
+    ' Delete existing table if it exists
+    On Error Resume Next
+    Set tbl = ws.ListObjects("Cuentas")
+    If Not tbl Is Nothing Then
+        tbl.Delete
+        Debug.Print "Deleted existing table 'Cuentas'"
+    End If
+    On Error GoTo 0
+
+    ' Create new table
+    Set tbl = ws.ListObjects.Add(xlSrcRange, ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, lastCol)), , xlYes)
+    tbl.Name = "Cuentas"
+    Debug.Print "Created table 'Cuentas'"
+
+    ' Check for DOC_ID column
+    colExists = False
+    For Each col In tbl.ListColumns
+        If col.Name = "DOC_ID" Then
+            colExists = True
+            Exit For
+        End If
+    Next col
+
+    If Not colExists Then
+        MsgBox "La columna 'DOC_ID' no existe en la tabla. Verifica los encabezados.", vbCritical
+        Debug.Print "Missing column: DOC_ID"
+        Exit Sub
+    End If
+
+    ' Add new column
+    With tbl
+        .ListColumns.Add.Name = "Nueva_Lista"
+
+        If Not .DataBodyRange Is Nothing Then
+            Set targetRange = .ListColumns("Nueva_Lista").DataBodyRange
+            Debug.Print "Target range for formula: " & targetRange.Address
+        Else
+            MsgBox "La tabla no tiene filas de datos. No se puede insertar la fÃ³rmula.", vbExclamation
+            Debug.Print "No data rows in table â€” skipping formula"
+            Exit Sub
+        End If
+    End With
+
+    ' Define formulas (Spanish)
+    formula365 = "=SI.ERROR(SI(ENCONTRAR(202,[@[DOC_ID]])>0,""Ingles""),[@[DOC_ID]])"
+    formula2016 = "=SI.ERROR(SI(ENCONTRAR(202,@[@[DOC_ID]])>0,""Ingles""),[@[DOC_ID]])"
+
+    ' Choose formula based on Excel version
+    excelMajorVersion = Val(Application.Version)
+    If excelMajorVersion >= 16 Then
+        formulaToUse = formula365
+        Debug.Print "Using formula for Excel 365+: " & formulaToUse
+    Else
+        formulaToUse = formula2016
+        Debug.Print "Using formula for Excel 2016 or earlier: " & formulaToUse
+    End If
+
+    ' Try assigning structured formula
+    On Error GoTo FallbackFormula
+    targetRange.FormulaLocal = formulaToUse
+    Debug.Print "Inserted Spanish structured formula"
+    On Error GoTo 0
+    GoTo Done
+
+FallbackFormula:
+    Debug.Print "Structured formula failed â€” applying fallback formula using R1C1"
+
+    ' Determine the last row of DOC_ID column (assumed to be column M)
+    Dim docIdCol As Range
+    Set docIdCol = tbl.ListColumns("DOC_ID").DataBodyRange
+    lastRow = docIdCol.Cells(docIdCol.Rows.Count).Row
+
+    ' Calculate the column offset between Nueva_Lista and DOC_ID
+    Dim offsetCols As Long
+    offsetCols = tbl.ListColumns("Nueva_Lista").Index - tbl.ListColumns("DOC_ID").Index
+
+    ' Apply fallback formula using R1C1
+    ws.Range("N2:N" & lastRow).FormulaR1C1 = _
+        "=SI.ERROR(SI(ENCONTRAR(202,RC[-" & offsetCols & "])>0,""Ingles""),RC[-" & offsetCols & "])"
+    Debug.Print "Fallback formula applied"
+
+Done:
+    Debug.Print "CrearTablayInsertarFormula2 completed"
+End Sub
+Private Sub CrearPivotTable2(wb As Workbook)
+    Debug.Print "CrearPivotTable2 started"
+
+    Dim wsPivot As Worksheet
+    Dim ptCache As PivotCache
+    Dim pt As PivotTable
+
+    ' Add new sheet for the pivot table
+    Set wsPivot = wb.Sheets.Add(After:=wb.Sheets(wb.Sheets.Count))
+    wsPivot.Name = "Espanol"
+    Debug.Print "Created sheet 'Espanol'"
+
+    ' Create pivot cache from the "Cuentas" table
+    Set ptCache = wb.PivotCaches.Create( _
+        SourceType:=xlDatabase, _
+        SourceData:="Cuentas")
+
+    ' Create pivot table
+    Set pt = ptCache.CreatePivotTable( _
+        TableDestination:=wsPivot.Cells(1, 1), _
+        TableName:="CuentaYa")
+
+    ' Apply pivot table settings
+    With pt
+        .ColumnGrand = True
+        .HasAutoFormat = True
+        .DisplayErrorString = False
+        .DisplayNullString = True
+        .EnableDrilldown = True
+        .ErrorString = ""
+        .MergeLabels = False
+        .NullString = ""
+        .PageFieldOrder = 2
+        .PageFieldWrapCount = 0
+        .PreserveFormatting = True
+        .RowGrand = True
+        .SaveData = True
+        .PrintTitles = False
+        .RepeatItemsOnEachPrintedPage = True
+        .TotalsAnnotation = False
+        .CompactRowIndent = 1
+        .InGridDropZones = False
+        .DisplayFieldCaptions = True
+        .DisplayMemberPropertyTooltips = False
+        .DisplayContextTooltips = True
+        .ShowDrillIndicators = True
+        .PrintDrillIndicators = False
+        .AllowMultipleFilters = False
+        .SortUsingCustomLists = True
+        .FieldListSortAscending = False
+        .ShowValuesRow = False
+        .CalculatedMembersInFilters = False
+        .RowAxisLayout xlCompactRow
+    End With
+
+    ' Set pivot cache options
+    With pt.PivotCache
+        .RefreshOnFileOpen = False
+        .MissingItemsLimit = xlMissingItemsDefault
+    End With
+
+    Debug.Print "Pivot table 'CuentaYa' created and configured"
+    Debug.Print "CrearPivotTable2 completed"
+End Sub
+Private Sub ConfigurarPivot2(wb As Workbook)
+    Debug.Print "ConfigurarPivot2 started"
+
+    Dim wsPivot As Worksheet
+    Dim pt As PivotTable
+    Dim keepList As Variant
+    Dim dict As Object
+    Dim item As Variant
+    Dim pi As PivotItem
+    Dim f As PivotField
+    Dim pf As PivotField
+
+    Set wsPivot = wb.Sheets("Espanol")
+    Set pt = wsPivot.PivotTables("CuentaYa")
+
+    pt.RepeatAllLabels xlRepeatLabels
+    Debug.Print "RepeatAllLabels applied"
+
+    ' Define list of items to keep
+    keepList = Array("CARTA_BIENVENIDA.pdf", "CUENTA_AHORRO_DIGITAL.pdf", "DORSO_DUI.jpeg", _
+                     "FATCA_DEBIDA_DILIGENCIA.pdf", "FOTOGRAFIA.jpeg", "FRENTE_DUI.jpeg", _
+                     "HOJA_COMISIONES.pdf", "PERFIL_TRX.pdf", "PRUEBA_VIDA.mp4")
+
+    Set dict = CreateObject("Scripting.Dictionary")
+    For Each item In keepList
+        dict(item) = True
+    Next item
+
+    With pt
+        .ManualUpdate = True
+        .RowAxisLayout xlTabularRow
+        .RowGrand = True
+
+        ' Row fields
+        With .PivotFields("Nombre")
+            .Orientation = xlRowField
+            .Position = 1
+            .Subtotals = Array(False, False, False, False, False, False, False, False, False, False, False, False)
+        End With
+
+        With .PivotFields("NoCuenta")
+            .Orientation = xlRowField
+            .Position = 2
+        End With
+
+        ' Page field
+        With .PivotFields("TipoProducto")
+            .Orientation = xlPageField
+            .Position = 1
+            .ClearAllFilters
+            On Error Resume Next
+            .CurrentPage = "CUENTA DIGITAL"
+            On Error GoTo 0
+        End With
+
+        ' Clear any existing data fields before layout
+        For Each f In .DataFields
+            f.Orientation = xlHidden
+        Next f
+
+        ' Column field: Nueva_Lista
+        Set pf = .PivotFields("Nueva_Lista")
+        With pf
+            .Orientation = xlColumnField
+            .Position = 1
+            .ClearAllFilters
+
+            On Error Resume Next
+            For Each pi In .PivotItems
+                pi.Visible = dict.exists(pi.Name)
+            Next pi
+            On Error GoTo 0
+        End With
+
+        ' Add data field
+        .AddDataField pf, "Count of Nueva_Lista", xlCount
+
+        .ManualUpdate = False
+    End With
+
+    ' ?? Reconfirm Nueva_Lista is in the column field on the "Ingles" sheet as well
+    With wb.Sheets("Espanol").PivotTables("CuentaYa").PivotFields("Nueva_Lista")
+        .Orientation = xlColumnField
+        .Position = 1
+    End With
+
+    Debug.Print "ConfigurarPivot2 completed"
+End Sub
+Private Sub FormatoCondicional2(wb As Workbook)
+    Debug.Print "FormatoCondicional2 started"
+
+    Dim ws As Worksheet
+    Dim pt As PivotTable
+    Dim targetCell As Range
+
+    Set ws = wb.Sheets("Espanol")
+    Set pt = ws.PivotTables("CuentaYa")
+
+    ' Target cell: 5th row, 3rd column of the pivot table
+    Set targetCell = pt.TableRange1.Cells(5, 3)
+
+    With targetCell
+        .FormatConditions.Delete
+        .FormatConditions.Add Type:=xlCellValue, Operator:=xlLess, Formula1:="=1"
+        With .FormatConditions(.FormatConditions.Count)
+            .SetFirstPriority
+            .StopIfTrue = False
+            .ScopeType = xlDataFieldScope
+            With .Interior
+                .PatternColorIndex = xlAutomatic
+                .ThemeColor = xlThemeColorAccent2
+                .TintAndShade = 0.4
+            End With
+        End With
+    End With
+
+    Debug.Print "FormatoCondicional2 completed"
+End Sub
+
+Private Sub InmovilizarPaneles2(wb As Workbook)
+    Debug.Print "InmovilizarPaneles2 started"
+
+    Dim ws As Worksheet
+    Set ws = wb.Sheets("Espanol")
+
+    With ws.Parent.Windows(1)
+        .SplitColumn = 2
+        .SplitRow = 4
+        .FreezePanes = True
+    End With
+
+    With ws.Columns("B")
+        .NumberFormat = "0"
+        .AutoFit
+    End With
+
+    Debug.Print "InmovilizarPaneles2 completed"
+End Sub
+Private Sub CrearPivot3(wb As Workbook)
+    Debug.Print "CrearPivot3 started"
+
+    Dim wsPivot As Worksheet
+    Dim ptCache As PivotCache
+    Dim pt As PivotTable
+
+    ' Add new sheet for the second pivot table
+    Set wsPivot = wb.Sheets.Add(After:=wb.Sheets(wb.Sheets.Count))
+    wsPivot.Name = "Ingles"
+    Debug.Print "Created sheet 'Ingles'"
+
+    ' Create pivot cache from the "Cuentas" table
+    Set ptCache = wb.PivotCaches.Create( _
+        SourceType:=xlDatabase, _
+        SourceData:="Cuentas")
+
+    ' Create pivot table
+    Set pt = ptCache.CreatePivotTable( _
+        TableDestination:=wsPivot.Cells(1, 1), _
+        TableName:="ClientesEnIngles")
+
+    ' Apply pivot table settings
+    With pt
+        .ColumnGrand = True
+        .HasAutoFormat = True
+        .DisplayErrorString = False
+        .DisplayNullString = True
+        .EnableDrilldown = True
+        .ErrorString = ""
+        .MergeLabels = False
+        .NullString = ""
+        .PageFieldOrder = 2
+        .PageFieldWrapCount = 0
+        .PreserveFormatting = True
+        .RowGrand = True
+        .SaveData = True
+        .PrintTitles = False
+        .RepeatItemsOnEachPrintedPage = True
+        .TotalsAnnotation = False
+        .CompactRowIndent = 1
+        .InGridDropZones = False
+        .DisplayFieldCaptions = True
+        .DisplayMemberPropertyTooltips = False
+        .DisplayContextTooltips = True
+        .ShowDrillIndicators = True
+        .PrintDrillIndicators = False
+        .AllowMultipleFilters = False
+        .SortUsingCustomLists = True
+        .FieldListSortAscending = False
+        .ShowValuesRow = False
+        .CalculatedMembersInFilters = False
+        .RowAxisLayout xlCompactRow
+    End With
+
+    ' Set pivot cache options
+    With pt.PivotCache
+        .RefreshOnFileOpen = False
+        .MissingItemsLimit = xlMissingItemsDefault
+    End With
+
+    Debug.Print "Pivot table 'ClientesEnIngles' created and configured"
+    Debug.Print "CrearPivot3 completed"
+End Sub
+Private Sub ConfigurarPivot3(wb As Workbook)
+    Debug.Print "ConfigurarPivot3 started"
+
+    Dim wsPivot As Worksheet
+    Dim pt As PivotTable
+    Dim keepList As Variant
+    Dim dict As Object
+    Dim item As Variant
+    Dim pi As PivotItem
+    Dim f As PivotField
+    Dim pf As PivotField
+
+    Set wsPivot = wb.Sheets("Ingles")
+    Set pt = wsPivot.PivotTables("ClientesEnIngles")
+
+    pt.RepeatAllLabels xlRepeatLabels
+    Debug.Print "RepeatAllLabels applied"
+
+    ' Define list of items to keep
+    keepList = Array("Ingles")
+    Set dict = CreateObject("Scripting.Dictionary")
+    For Each item In keepList
+        dict(item) = True
+    Next item
+
+    With pt
+        .ManualUpdate = True
+        .RowAxisLayout xlTabularRow
+        .RowGrand = True
+
+        ' Row fields
+        With .PivotFields("Nombre")
+            .Orientation = xlRowField
+            .Position = 1
+            .Subtotals = Array(False, False, False, False, False, False, False, False, False, False, False, False)
+        End With
+
+        With .PivotFields("NoCuenta")
+            .Orientation = xlRowField
+            .Position = 2
+        End With
+
+        ' Page field
+        With .PivotFields("TipoProducto")
+            .Orientation = xlPageField
+            .Position = 1
+            .ClearAllFilters
+            On Error Resume Next
+            .CurrentPage = "CUENTA DIGITAL"
+            On Error GoTo 0
+        End With
+
+        ' Clear any existing data fields before layout
+        For Each f In .DataFields
+            f.Orientation = xlHidden
+        Next f
+
+        ' Column field: Nueva_Lista
+        Set pf = .PivotFields("Nueva_Lista")
+        With pf
+            .Orientation = xlColumnField
+            .Position = 1
+            .ClearAllFilters
+
+            On Error Resume Next
+            For Each pi In .PivotItems
+                pi.Visible = dict.exists(pi.Name)
+            Next pi
+            On Error GoTo 0
+        End With
+
+        ' Add data field
+        .AddDataField pf, "Count of Nueva_Lista", xlCount
+
+        .ManualUpdate = False
+    End With
+
+    ' ?? Reconfirm Nueva_Lista is in the column field on the "Espanol" sheet as well
+    With wb.Sheets("Ingles").PivotTables("ClientesEnIngles").PivotFields("Nueva_Lista")
+        .Orientation = xlColumnField
+        .Position = 1
+    End With
+
+    Debug.Print "ConfigurarPivot3 completed"
+End Sub
+
+Private Sub InmovilizarPaneles3(wb As Workbook)
+    Debug.Print "InmovilizarPaneles3 started"
+
+    Dim ws As Worksheet
+    Set ws = wb.Sheets("Ingles")
+
+    With ws.Parent.Windows(1)
+        .SplitColumn = 2
+        .SplitRow = 4
+        .FreezePanes = True
+    End With
+
+    With ws.Columns("B")
+        .NumberFormat = "0"
+        .AutoFit
+    End With
+
+    Debug.Print "InmovilizarPaneles3 completed"
+End Sub
