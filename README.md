@@ -4,4 +4,6 @@ Within this repository, I've stored VBA code I worked on during my summer 2025 i
 
 By the end of my internship, I had cut down the revision process by 95% and the dept. was satisfied with my work
 
+DISCLAIMER: While unorthodox, the code is saved as a .txt file because it's a file format that did not get blocked when shared through email to co-workers. 
+
 
